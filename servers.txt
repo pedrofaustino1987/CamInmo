@@ -1,8 +1,0 @@
-C:\Users\HP\Desktop\PROGRAMACION\CamInmo\
-python -m uvicorn main:app --reload
-
-C:\Users\HP\Desktop\PROGRAMACION\CamInmo\frontend>
-npm run dev
-
-
-
