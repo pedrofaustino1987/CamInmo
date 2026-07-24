@@ -1,81 +1,274 @@
 import sqlite3
 import os
 import shutil
+from contextlib import contextmanager
 from fastapi import FastAPI, HTTPException, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
 
-app = FastAPI(title="CamInmo - Sistema Inmobiliario Backend")
-
-# -------------------------------------------------------------------
-# CONFIGURACIÓN DE CARPETA DE ARCHIVOS E IMÁGENES
-# -------------------------------------------------------------------
+DB_NAME = "CamInmo.db"
 UPLOAD_DIR = "uploads"
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Servir archivos estáticos vía HTTP (ej: http://localhost:8000/uploads/propiedad_1.jpg)
+# -------------------------------------------------------------------
+# SCRIPT SQL EXACTO DE ESTRUCTURA Y DATOS INICIALES
+# -------------------------------------------------------------------
+INIT_SQL_SCRIPT = """
+BEGIN TRANSACTION;
+CREATE TABLE IF NOT EXISTS "planes_saas" (
+	"id_plan"	INTEGER,
+	"nombre"	TEXT NOT NULL UNIQUE,
+	"precio_mensual"	REAL NOT NULL,
+	"limite_propiedades"	INTEGER NOT NULL,
+	"permite_ia"	INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY("id_plan" AUTOINCREMENT)
+);
+CREATE TABLE IF NOT EXISTS "socios" (
+	"id"	INTEGER,
+	"nombre"	TEXT NOT NULL,
+	"email"	TEXT,
+	"telefono"	TEXT,
+	"estado"	TEXT DEFAULT 'Activo',
+	PRIMARY KEY("id" AUTOINCREMENT)
+);
+CREATE TABLE IF NOT EXISTS "propiedades" (
+	"id"	INTEGER,
+	"titulo"	TEXT NOT NULL,
+	"tipo"	TEXT NOT NULL,
+	"precio"	REAL NOT NULL,
+	"estado"	TEXT DEFAULT 'Disponible',
+	"ubicacion"	TEXT,
+	"socio_id"	INTEGER DEFAULT 1,
+	"imagen_url"	TEXT,
+	"moneda"	TEXT DEFAULT 'USD',
+	PRIMARY KEY("id" AUTOINCREMENT),
+	FOREIGN KEY("socio_id") REFERENCES "socios_inmobiliarios"("id_socio")
+);
+CREATE TABLE IF NOT EXISTS "socios_inmobiliarios" (
+	"id_socio"	INTEGER,
+	"nombre_comercial"	TEXT NOT NULL UNIQUE,
+	"cuit"	TEXT UNIQUE,
+	"matricula_corredor"	TEXT,
+	"estado_camara"	TEXT DEFAULT 'ACTIVO',
+	"id_plan_actual"	INTEGER NOT NULL,
+	"fecha_registro"	TEXT DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY("id_socio" AUTOINCREMENT),
+	FOREIGN KEY("id_plan_actual") REFERENCES "planes_saas"("id_plan")
+);
+CREATE TABLE IF NOT EXISTS "transacciones_comisiones" (
+	"id_transaccion"	INTEGER,
+	"id_propiedad"	INTEGER NOT NULL,
+	"id_socio"	INTEGER NOT NULL,
+	"monto_operacion"	REAL NOT NULL,
+	"porcentaje_comision_corredor"	REAL NOT NULL,
+	"monto_comision_total"	REAL NOT NULL,
+	"fee_plataforma_cim"	REAL NOT NULL,
+	"estado_pago"	TEXT NOT NULL DEFAULT 'PENDIENTE',
+	"fecha_transaccion"	TEXT DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY("id_transaccion" AUTOINCREMENT),
+	FOREIGN KEY("id_propiedad") REFERENCES "propiedades"("id"),
+	FOREIGN KEY("id_socio") REFERENCES "socios_inmobiliarios"("id_socio")
+);
+CREATE TABLE IF NOT EXISTS "usuarios_empleados" (
+	"id_usuario"	INTEGER,
+	"id_socio"	INTEGER NOT NULL,
+	"nombre_completo"	TEXT NOT NULL,
+	"email"	TEXT NOT NULL UNIQUE,
+	"password_hash"	TEXT NOT NULL,
+	"rol"	TEXT NOT NULL DEFAULT 'AGENTE',
+	"acepto_terminos"	INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY("id_usuario" AUTOINCREMENT),
+	FOREIGN KEY("id_socio") REFERENCES "socios_inmobiliarios"("id_socio") ON DELETE CASCADE
+);
+
+-- INSERCIÓN DE DATOS INICIALES (Sólo si las tablas están vacías)
+INSERT OR IGNORE INTO "planes_saas" VALUES (1,'Básico',30000.0,50,0);
+INSERT OR IGNORE INTO "planes_saas" VALUES (2,'Profesional',70000.0,-1,1);
+INSERT OR IGNORE INTO "planes_saas" VALUES (3,'Enterprise',0.0,-1,1);
+
+INSERT OR IGNORE INTO "socios" VALUES (1,'Agente Inicial CIM','agente@cimia.com','+54 376 4000000','Activo');
+
+INSERT OR IGNORE INTO "socios_inmobiliarios" VALUES 
+(1,'ARAUCARIA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(2,'ARQUIN',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(3,'AZUL PROPIEDADES (JUAN GONZALEZ)',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(4,'BERGOTTINI BIENES RAICES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(5,'CARLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(6,'CARRAFA FLORES INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(7,'CELMAN PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(8,'CHALANCZUK PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(9,'CHIOFALO & NADICH',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(10,'CORA CAMPOS',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(11,'DAVIÑA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(12,'DEL OESTE INMUEBLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(13,'DELLAPIERRE',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(14,'FERNANDEZ INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(15,'FERREIRA INMUEBLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(16,'FIDANZA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(17,'FORESTAL LA RAMA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(18,'FUENTES PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(19,'G30 ESTUDIO INMOBILIARIO',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(20,'GARUPA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(21,'GAUTO FECHNER INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(22,'GIMENEZ & GIMENES INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(23,'GRACIELA ARCE',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(24,'GUAYRA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(25,'GUTLEBER PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(26,'GYS PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(27,'HITO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(28,'HOSLVAK PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(29,'IGUAZU INMUEBLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(30,'INGENIERO RESEK',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(31,'INMOBILIARIA SITIOS',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(32,'INNOVA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(33,'IVO GÔTZ',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(34,'JANIEL PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(35,'KAMADA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(36,'KUNZ PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(37,'LA CAPITAL PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(38,'LATINA S.A.',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(39,'LILIANA DURAN PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(40,'LOSAVIO & FULKET PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(41,'LOSAVIO DANIEL',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(42,'MANECO PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(43,'MARCELO MARINI INVERSIONES INMOBILIARIAS',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(44,'MARIA BOWER',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(45,'MELINA ROMERO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(46,'MERCEDES BONETTI INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(47,'MIRTA MARCON INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(48,'MISIONES INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(49,'MONICA FOGELER INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(50,'MONSU PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(51,'MyM PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(52,'NEXOS INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(53,'NIELLA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(54,'ORTIZ INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(55,'P.O.E.A.',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(56,'PLATINIUM INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(57,'RAICES INMOBILIARIA (MACIEL, ELDORADO)',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(58,'RAICES INMOBILIARIA (MARCO W.)',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(59,'RAUL CARRIZO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(60,'RIMA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(61,'ROBLES PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(62,'RYS PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(63,'SAMUDIO HALLEY AIDA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(64,'SEDKO PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(65,'SOLARI INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(66,'SONIA PEREYRA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(67,'SOSA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(68,'TEIJEIRO PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(69,'ULISES VALLARO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(70,'V PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(71,'VANINA PAULUK INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(72,'VIBA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(73,'ZAPANI PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(74,'ZUNY FERNANDEZ INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40'),
+(75,'SINGULAR',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+
+INSERT OR IGNORE INTO "propiedades" VALUES 
+(1,'Casa de Campo en Posadas','Casa',120000000.0,'Vendido','Posadas, Misiones',1,NULL,'USD'),
+(2,'Departamento Céntrico 2D','Departamento',85000000.0,'Vendido','Posadas, Misiones',1,NULL,'USD'),
+(3,'Terreno Zona Garupá','Terreno',35000000.0,'Vendido','Garupá, Misiones',1,NULL,'USD'),
+(4,'Local Comercial Microcentro','Local',95000000.0,'Vendido','Posadas, Misiones',1,NULL,'USD'),
+(5,'Casa Quinta Oberá','Casa',110000000.0,'Vendido','Oberá, Misiones',1,NULL,'USD');
+
+INSERT OR IGNORE INTO "transacciones_comisiones" VALUES 
+(1,1,1,65000.0,5.0,3250.0,325.0,'COMPLETADO','2026-07-19 17:33:08'),
+(2,1,1,150000.0,4.0,6000.0,600.0,'COMPLETADO','2026-07-19 18:01:24');
+
+INSERT OR IGNORE INTO "usuarios_empleados" VALUES 
+(1,1,'Juan Pérez','juan@posadascentro.com','hash_pass_123','ADMIN',1),
+(2,1,'María Gómez','maria@posadascentro.com','hash_pass_456','AGENTE',1),
+(3,2,'Carlos Rodríguez','carlos@garupaprop.com','hash_pass_789','ADMIN',1),
+(4,3,'Ana Martínez','ana@oberabr.com','hash_pass_321','AGENTE',1);
+
+-- TRIGGERS
+DROP TRIGGER IF EXISTS calcular_comisiones_automatico;
+CREATE TRIGGER calcular_comisiones_automatico
+AFTER INSERT ON transacciones_comisiones
+BEGIN
+    UPDATE transacciones_comisiones
+    SET 
+        monto_comision_total = NEW.monto_operacion * (NEW.porcentaje_comision_corredor / 100.0),
+        fee_plataforma_cim = (NEW.monto_operacion * (NEW.porcentaje_comision_corredor / 100.0)) * 0.10
+    WHERE id_transaccion = NEW.id_transaccion;
+END;
+
+DROP TRIGGER IF EXISTS requerir_consentimiento_ley25326;
+CREATE TRIGGER requerir_consentimiento_ley25326
+BEFORE INSERT ON usuarios_empleados
+BEGIN
+    SELECT
+        CASE
+            WHEN NEW.acepto_terminos != 1
+            THEN RAISE(ABORT, 'Error Legal: No se puede registrar al usuario sin el consentimiento explícito de términos y condiciones (Ley N.º 25.326).')
+        END;
+END;
+
+COMMIT;
+"""
+
+# -------------------------------------------------------------------
+# HELPER DE CONEXIÓN Y CREACIÓN INICIAL
+# -------------------------------------------------------------------
+@contextmanager
+def get_db():
+    conn = sqlite3.connect(DB_NAME)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def inicializar_bd():
+    """Ejecuta el script SQL completo para asegurar la estructura exacta."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.executescript(INIT_SQL_SCRIPT)
+        conn.close()
+        print(f"✅ Base de datos '{DB_NAME}' creada y sincronizada exitosamente con todas sus tablas, datos y triggers.")
+    except Exception as e:
+        print(f"⚠️ Nota de Inicialización BD: {e}")
+
+# Se ejecuta al cargar el archivo
+inicializar_bd()
+
+# -------------------------------------------------------------------
+# INICIALIZACIÓN DE FASTAPI
+# -------------------------------------------------------------------
+app = FastAPI(title="CamInmo - Sistema Inmobiliario Backend")
+
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-# Permitir CORS para conexión fluida con Next.js
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-DB_NAME = "CamInmo.db"
-
-# -------------------------------------------------------------------
-# HELPER DE CONEXIÓN (Activa Triggers y Foreign Keys)
-# -------------------------------------------------------------------
-def get_db():
-    """Abre conexión con SQLite asegurando que los Triggers y FKs estén activos."""
-    conn = sqlite3.connect(DB_NAME)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
-
-def verificar_db_al_iniciar():
-    """Verifica la DB y asegura la columna imagen_url en la tabla propiedades."""
-    if not os.path.exists(DB_NAME):
-        print(f"⚠️ ADVERTENCIA: No se encontró el archivo '{DB_NAME}'. Asegúrate de que esté en la raíz del proyecto.")
-    else:
-        conn = get_db()
-        cursor = conn.cursor()
-        # Intentar crear la columna imagen_url si no existe
-        try:
-            cursor.execute("ALTER TABLE propiedades ADD COLUMN imagen_url TEXT;")
-            conn.commit()
-            print("✨ Columna 'imagen_url' agregada a la tabla 'propiedades'.")
-        except sqlite3.OperationalError:
-            pass # La columna ya existía
-        finally:
-            conn.close()
-        print(f"✅ Base de datos '{DB_NAME}' conectada correctamente con Triggers activos.")
-
-verificar_db_al_iniciar()
-
 # -------------------------------------------------------------------
 # MODELOS PYDANTIC
 # -------------------------------------------------------------------
 class PropiedadCreate(BaseModel):
-    titulo: str
-    tipo: str
-    precio: float
-    ubicacion: str
+    titulo: Optional[str] = "Propiedad Sin Título"
+    tipo: Optional[str] = "Casa"
+    precio: Optional[float] = 0.0
+    moneda: Optional[str] = "USD"
+    ubicacion: Optional[str] = "Sin ubicación"
     estado: Optional[str] = "Disponible"
     socio_id: Optional[int] = 1
+    socioId: Optional[int] = None
 
 class PropiedadUpdate(BaseModel):
     titulo: str
     tipo: str
     precio: float
+    moneda: Optional[str] = "USD"
     ubicacion: str
     estado: Optional[str] = "Disponible"
     socio_id: Optional[int] = 1
@@ -84,44 +277,20 @@ class EstadoUpdate(BaseModel):
     estado: str
 
 # -------------------------------------------------------------------
-# AUTENTICACIÓN
-# -------------------------------------------------------------------
-@app.post("/auth/login")
-def login(username: str = Form(...), password: str = Form(...)):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id_usuario, nombre_completo, rol FROM usuarios_empleados WHERE email = ? AND password_hash = ?",
-        (username, password)
-    )
-    user = cursor.fetchone()
-    conn.close()
-
-    if user or (username and password):
-        return {
-            "access_token": "token_caminmo_demo_123456",
-            "token_type": "bearer",
-            "mensaje": "Inicio de sesión exitoso"
-        }
-    
-    raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
-
-# -------------------------------------------------------------------
-# ENDPOINTS DE SOCIOS
+# ENDPOINTS ADAPTADOS A LA NUEVA ESTRUCTURA
 # -------------------------------------------------------------------
 @app.get("/socios")
 def obtener_socios():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT s.id_socio, s.nombre_comercial, u.email, u.nombre_completo, u.rol
-        FROM socios_inmobiliarios s
-        LEFT JOIN usuarios_empleados u ON s.id_socio = u.id_socio
-        GROUP BY s.id_socio
-        ORDER BY s.id_socio DESC
-    """)
-    rows = cursor.fetchall()
-    socios = [
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT s.id_socio, s.nombre_comercial, u.email, u.nombre_completo, u.rol
+            FROM socios_inmobiliarios s
+            LEFT JOIN usuarios_empleados u ON s.id_socio = u.id_socio
+            GROUP BY s.id_socio
+            ORDER BY s.id_socio DESC
+        """).fetchall()
+
+    return [
         {
             "id": row[0],
             "nombre": row[1],
@@ -131,245 +300,18 @@ def obtener_socios():
         }
         for row in rows
     ]
-    conn.close()
-    return socios
 
-# -------------------------------------------------------------------
-# ENDPOINTS DE PROPIEDADES (ADMINISTRACIÓN)
-# -------------------------------------------------------------------
 @app.get("/propiedades")
 def obtener_propiedades():
-    conn = get_db()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
-            SELECT p.id_propiedad, p.titulo, p.tipo_inmueble, p.precio, p.localidad, p.estado, p.id_socio, s.nombre_comercial, p.imagen_url
-            FROM propiedades p
-            LEFT JOIN socios_inmobiliarios s ON p.id_socio = s.id_socio
-            ORDER BY p.id_propiedad DESC
-        """)
-        rows = cursor.fetchall()
-        propiedades = [
-            {
-                "id": row[0],
-                "titulo": row[1],
-                "tipo": row[2],
-                "precio": row[3],
-                "ubicacion": row[4],
-                "estado": "Disponible" if str(row[5]).upper() == "DISPONIBLE" else ("Reservado" if str(row[5]).upper() == "RESERVADO" else "Vendido"),
-                "socio_id": row[6],
-                "socio_nombre": row[7] if row[7] else "Agente CIM",
-                "socio_email": "agente@cimia.com",
-                "imagen_url": row[8]
-            }
-            for row in rows
-        ]
-        return propiedades
-    except Exception as e:
-        print(f"Error al obtener propiedades: {e}")
-        return []
-    finally:
-        conn.close()
+        with get_db() as conn:
+            rows = conn.execute("""
+                SELECT p.id, p.titulo, p.tipo, p.precio, p.ubicacion, p.estado, p.socio_id, s.nombre_comercial, p.imagen_url, p.moneda
+                FROM propiedades p
+                LEFT JOIN socios_inmobiliarios s ON p.socio_id = s.id_socio
+                ORDER BY p.id DESC
+            """).fetchall()
 
-# OBTENER PROPIEDAD POR ID (Para Edición)
-@app.get("/propiedades/{id}")
-def obtener_propiedad_por_id(id: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id_propiedad, titulo, tipo_inmueble, precio, localidad, estado, id_socio, imagen_url
-        FROM propiedades WHERE id_propiedad = ?
-    """, (id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-        
-    return {
-        "id": row[0],
-        "titulo": row[1],
-        "tipo": row[2],
-        "precio": row[3],
-        "ubicacion": row[4],
-        "estado": row[5],
-        "socio_id": row[6],
-        "imagen_url": row[7]
-    }
-
-@app.post("/propiedades", status_code=201)
-def crear_propiedad(propiedad: PropiedadCreate):
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    estado_db = propiedad.estado.upper()
-    
-    cursor.execute("""
-        INSERT INTO propiedades (id_socio, titulo, tipo_inmueble, precio, localidad, estado, tipo_operacion, moneda)
-        VALUES (?, ?, ?, ?, ?, ?, 'VENTA', 'ARS')
-    """, (propiedad.socio_id or 1, propiedad.titulo, propiedad.tipo, propiedad.precio, propiedad.ubicacion, estado_db))
-    
-    conn.commit()
-    prop_id = cursor.lastrowid
-    conn.close()
-    return {"id": prop_id, "mensaje": "Propiedad agregada correctamente"}
-
-# SUBIR O ACTUALIZAR IMAGEN DE UNA PROPIEDAD
-@app.post("/propiedades/{id}/imagen")
-async def subir_imagen_propiedad(id: int, file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="El archivo enviado debe ser una imagen.")
-
-    # Crear un nombre único de archivo basado en el ID
-    extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
-    filename = f"propiedad_{id}.{extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-
-    # Guardar el archivo en el sistema
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Generar la URL pública accesible
-    image_url = f"http://localhost:8000/uploads/{filename}"
-
-    # Guardar en SQLite
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE propiedades SET imagen_url = ? WHERE id_propiedad = ?", (image_url, id))
-    conn.commit()
-    affected = cursor.rowcount
-    conn.close()
-
-    if affected == 0:
-        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-
-    return {"status": "ok", "imagen_url": image_url}
-
-# ACTUALIZAR PROPIEDAD COMPLETA (PUT)
-@app.put("/propiedades/{id}")
-def editar_propiedad(id: int, p: PropiedadUpdate):
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    estado_db = p.estado.upper() if p.estado else "DISPONIBLE"
-    
-    cursor.execute("""
-        UPDATE propiedades 
-        SET titulo = ?, tipo_inmueble = ?, precio = ?, localidad = ?, estado = ?, id_socio = ?
-        WHERE id_propiedad = ?
-    """, (p.titulo, p.tipo, p.precio, p.ubicacion, estado_db, p.socio_id or 1, id))
-    
-    conn.commit()
-    affected = cursor.rowcount
-    conn.close()
-    
-    if affected == 0:
-        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-        
-    return {"mensaje": "Propiedad actualizada correctamente"}
-
-@app.patch("/propiedades/{id}/estado")
-def actualizar_estado_propiedad(id: int, payload: EstadoUpdate):
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    estado_db = payload.estado.upper()
-    cursor.execute("UPDATE propiedades SET estado = ? WHERE id_propiedad = ?", (estado_db, id))
-    conn.commit()
-    affected = cursor.rowcount
-    conn.close()
-    
-    if affected == 0:
-        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-    
-    return {"mensaje": f"Estado actualizado a {payload.estado}"}
-
-@app.delete("/propiedades/{id}")
-def eliminar_propiedad(id: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM propiedades WHERE id_propiedad = ?", (id,))
-    conn.commit()
-    affected = cursor.rowcount
-    conn.close()
-    
-    if affected == 0:
-        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-    
-    return {"mensaje": "Propiedad eliminada correctamente"}
-
-# -------------------------------------------------------------------
-# ANALÍTICAS Y DASHBOARD
-# -------------------------------------------------------------------
-@app.get("/analiticas/resumen")
-def obtener_resumen_analiticas():
-    conn = get_db()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute("SELECT COUNT(*) FROM propiedades")
-        propiedades_totales = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM propiedades WHERE UPPER(estado) = 'DISPONIBLE'")
-        propiedades_disponibles = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM socios_inmobiliarios")
-        usuarios_registrados = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COALESCE(SUM(precio), 0), COALESCE(AVG(precio), 0) FROM propiedades")
-        res_precios = cursor.fetchone()
-        total_cartera = res_precios[0] or 0.0
-        precio_promedio = res_precios[1] or 0.0
-
-        mrr_proyectado = total_cartera * 0.015
-        tasa_disponibilidad = round((propiedades_disponibles / propiedades_totales) * 100, 1) if propiedades_totales > 0 else 0.0
-
-        cursor.execute("SELECT tipo_inmueble, COUNT(*) FROM propiedades GROUP BY tipo_inmueble")
-        distribucion_tipos = [{"tipo": row[0] or "Sin Tipo", "cantidad": row[1]} for row in cursor.fetchall()]
-
-        return {
-            "mrr_proyectado": round(mrr_proyectado, 2),
-            "propiedades_totales": propiedades_totales,
-            "propiedades_disponibles": propiedades_disponibles,
-            "usuarios_registrados": usuarios_registrados,
-            "precio_promedio": round(precio_promedio, 2),
-            "tasa_disponibilidad": tasa_disponibilidad,
-            "distribucion_tipos": distribucion_tipos
-        }
-    except Exception as e:
-        print(f"Error analiticas: {e}")
-        return {
-            "mrr_proyectado": 0, "propiedades_totales": 0, "propiedades_disponibles": 0,
-            "usuarios_registrados": 0, "precio_promedio": 0, "tasa_disponibilidad": 0, "distribucion_tipos": []
-        }
-    finally:
-        conn.close()
-
-# -------------------------------------------------------------------
-# PORTAL PÚBLICO
-# -------------------------------------------------------------------
-@app.get("/publico/propiedades")
-def obtener_propiedades_publicas():
-    conn = get_db()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT 
-                p.id_propiedad, 
-                COALESCE(p.titulo, 'Sin título') AS titulo, 
-                COALESCE(p.tipo_inmueble, 'Inmueble') AS tipo, 
-                COALESCE(p.precio, 0) AS precio, 
-                COALESCE(p.localidad, 'Ubicación no especificada') AS ubicacion, 
-                s.nombre_comercial,
-                p.imagen_url
-            FROM propiedades p
-            LEFT JOIN socios_inmobiliarios s ON p.id_socio = s.id_socio
-            WHERE UPPER(COALESCE(p.estado, 'DISPONIBLE')) = 'DISPONIBLE'
-            ORDER BY p.id_propiedad DESC
-        """)
-        
-        rows = cursor.fetchall()
-        
         return [
             {
                 "id": row[0],
@@ -377,15 +319,71 @@ def obtener_propiedades_publicas():
                 "tipo": row[2],
                 "precio": row[3],
                 "ubicacion": row[4],
-                "agente_nombre": row[5] or "Inmobiliaria CIM",
-                "agente_telefono": "+54 9 376 4000000",
-                "agente_email": "agente@cimia.com",
-                "imagen_url": row[6]
+                "estado": row[5],
+                "socio_id": row[6],
+                "socio_nombre": row[7] if row[7] else "Agente CIM",
+                "socio_email": "agente@cimia.com",
+                "imagen_url": row[8],
+                "moneda": row[9] if row[9] else "USD"
             }
             for row in rows
         ]
-    except Exception as err:
-        print(f"❌ Error en SQL (/publico/propiedades): {err}")
+    except Exception as e:
+        print(f"❌ Error al obtener propiedades: {e}")
         return []
-    finally:
-        conn.close()
+
+@app.post("/propiedades", status_code=201)
+def crear_propiedad(propiedad: PropiedadCreate):
+    try:
+        socio_final = propiedad.socio_id or propiedad.socioId or 1
+        estado_db = propiedad.estado or "Disponible"
+        moneda_db = propiedad.moneda or "USD"
+        
+        with get_db() as conn:
+            cursor = conn.execute("""
+                INSERT INTO propiedades (titulo, tipo, precio, estado, ubicacion, socio_id, moneda)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (propiedad.titulo, propiedad.tipo, propiedad.precio, estado_db, propiedad.ubicacion, socio_final, moneda_db))
+            conn.commit()
+            prop_id = cursor.lastrowid
+
+        return {"id": prop_id, "mensaje": "Propiedad creada con éxito"}
+    except Exception as e:
+        print(f"❌ Error al crear propiedad: {e}")
+        raise HTTPException(status_code=400, detail=f"Error en BD: {str(e)}")
+
+@app.post("/propiedades/{id}/imagen")
+async def subir_imagen_propiedad(id: int, file: UploadFile = File(...)):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="El archivo enviado debe ser una imagen.")
+
+    extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    filename = f"propiedad_{id}.{extension}"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    image_url = f"{BASE_URL}/uploads/{filename}"
+
+    with get_db() as conn:
+        cursor = conn.execute("UPDATE propiedades SET imagen_url = ? WHERE id = ?", (image_url, id))
+        conn.commit()
+        affected = cursor.rowcount
+
+    if affected == 0:
+        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+
+    return {"status": "ok", "imagen_url": image_url}
+
+@app.delete("/propiedades/{id}")
+def eliminar_propiedad(id: int):
+    with get_db() as conn:
+        cursor = conn.execute("DELETE FROM propiedades WHERE id = ?", (id,))
+        conn.commit()
+        affected = cursor.rowcount
+    
+    if affected == 0:
+        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+    
+    return {"mensaje": "Propiedad eliminada correctamente"}

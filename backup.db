@@ -1,0 +1,174 @@
+BEGIN TRANSACTION;
+CREATE TABLE IF NOT EXISTS "planes_saas" (
+	"id_plan"	INTEGER,
+	"nombre"	TEXT NOT NULL UNIQUE,
+	"precio_mensual"	REAL NOT NULL,
+	"limite_propiedades"	INTEGER NOT NULL,
+	"permite_ia"	INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY("id_plan" AUTOINCREMENT)
+);
+CREATE TABLE IF NOT EXISTS "propiedades" (
+	"id"	INTEGER,
+	"titulo"	TEXT NOT NULL,
+	"tipo"	TEXT NOT NULL,
+	"precio"	REAL NOT NULL,
+	"estado"	TEXT DEFAULT 'Disponible',
+	"ubicacion"	TEXT,
+	"socio_id"	INTEGER DEFAULT 1,
+	"imagen_url"	TEXT,
+	PRIMARY KEY("id" AUTOINCREMENT),
+	FOREIGN KEY("socio_id") REFERENCES "socios"("id")
+);
+CREATE TABLE IF NOT EXISTS "socios" (
+	"id"	INTEGER,
+	"nombre"	TEXT NOT NULL,
+	"email"	TEXT,
+	"telefono"	TEXT,
+	"estado"	TEXT DEFAULT 'Activo',
+	PRIMARY KEY("id" AUTOINCREMENT)
+);
+CREATE TABLE IF NOT EXISTS "socios_inmobiliarios" (
+	"id_socio"	INTEGER,
+	"nombre_comercial"	TEXT NOT NULL UNIQUE,
+	"cuit"	TEXT UNIQUE,
+	"matricula_corredor"	TEXT,
+	"estado_camara"	TEXT DEFAULT 'ACTIVO',
+	"id_plan_actual"	INTEGER NOT NULL,
+	"fecha_registro"	TEXT DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY("id_socio" AUTOINCREMENT),
+	FOREIGN KEY("id_plan_actual") REFERENCES "planes_saas"("id_plan")
+);
+CREATE TABLE IF NOT EXISTS "transacciones_comisiones" (
+	"id_transaccion"	INTEGER,
+	"id_propiedad"	INTEGER NOT NULL,
+	"id_socio"	INTEGER NOT NULL,
+	"monto_operacion"	REAL NOT NULL,
+	"porcentaje_comision_corredor"	REAL NOT NULL,
+	"monto_comision_total"	REAL NOT NULL,
+	"fee_plataforma_cim"	REAL NOT NULL,
+	"estado_pago"	TEXT NOT NULL DEFAULT 'PENDIENTE',
+	"fecha_transaccion"	TEXT DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY("id_transaccion" AUTOINCREMENT),
+	FOREIGN KEY("id_propiedad") REFERENCES "propiedades"("id_propiedad"),
+	FOREIGN KEY("id_socio") REFERENCES "socios_inmobiliarios"("id_socio")
+);
+CREATE TABLE IF NOT EXISTS "usuarios_empleados" (
+	"id_usuario"	INTEGER,
+	"id_socio"	INTEGER NOT NULL,
+	"nombre_completo"	TEXT NOT NULL,
+	"email"	TEXT NOT NULL UNIQUE,
+	"password_hash"	TEXT NOT NULL,
+	"rol"	TEXT NOT NULL DEFAULT 'AGENTE',
+	"acepto_terminos"	INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY("id_usuario" AUTOINCREMENT),
+	FOREIGN KEY("id_socio") REFERENCES "socios_inmobiliarios"("id_socio") ON DELETE CASCADE
+);
+INSERT INTO "planes_saas" VALUES (1,'Básico',30000.0,50,0);
+INSERT INTO "planes_saas" VALUES (2,'Profesional',70000.0,-1,1);
+INSERT INTO "planes_saas" VALUES (3,'Enterprise',0.0,-1,1);
+INSERT INTO "propiedades" VALUES (1,'Casa de Campo en Posadas','Casa',120000000.0,'Vendido','Posadas, Misiones',1,NULL,'USD');
+INSERT INTO "propiedades" VALUES (2,'Departamento Céntrico 2D','Departamento',85000000.0,'Vendido','Posadas, Misiones',1,NULL,'USD');
+INSERT INTO "propiedades" VALUES (3,'Terreno Zona Garupá','Terreno',35000000.0,'Vendido','Garupá, Misiones',1,NULL,'USD');
+INSERT INTO "propiedades" VALUES (4,'Local Comercial Microcentro','Local',95000000.0,'Vendido','Posadas, Misiones',1,NULL,'USD');
+INSERT INTO "propiedades" VALUES (5,'Casa Quinta Oberá','Casa',110000000.0,'Vendido','Oberá, Misiones',1,NULL,'USD');
+INSERT INTO "socios" VALUES (1,'Agente Inicial CIM','agente@cimia.com','+54 376 4000000','Activo');
+INSERT INTO "socios_inmobiliarios" VALUES (1,'ARAUCARIA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (2,'ARQUIN',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (3,'AZUL PROPIEDADES (JUAN GONZALEZ)',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (4,'BERGOTTINI BIENES RAICES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (5,'CARLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (6,'CARRAFA FLORES INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (7,'CELMAN PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (8,'CHALANCZUK PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (9,'CHIOFALO & NADICH',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (10,'CORA CAMPOS',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (11,'DAVIÑA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (12,'DEL OESTE INMUEBLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (13,'DELLAPIERRE',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (14,'FERNANDEZ INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (15,'FERREIRA INMUEBLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (16,'FIDANZA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (17,'FORESTAL LA RAMA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (18,'FUENTES PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (19,'G30 ESTUDIO INMOBILIARIO',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (20,'GARUPA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (21,'GAUTO FECHNER INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (22,'GIMENEZ & GIMENES INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (23,'GRACIELA ARCE',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (24,'GUAYRA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (25,'GUTLEBER PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (26,'GYS PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (27,'HITO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (28,'HOSLVAK PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (29,'IGUAZU INMUEBLES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (30,'INGENIERO RESEK',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (31,'INMOBILIARIA SITIOS',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (32,'INNOVA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (33,'IVO GÔTZ',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (34,'JANIEL PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (35,'KAMADA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (36,'KUNZ PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (37,'LA CAPITAL PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (38,'LATINA S.A.',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (39,'LILIANA DURAN PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (40,'LOSAVIO & FULKET PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (41,'LOSAVIO DANIEL',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (42,'MANECO PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (43,'MARCELO MARINI INVERSIONES INMOBILIARIAS',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (44,'MARIA BOWER',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (45,'MELINA ROMERO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (46,'MERCEDES BONETTI INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (47,'MIRTA MARCON INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (48,'MISIONES INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (49,'MONICA FOGELER INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (50,'MONSU PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (51,'MyM PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (52,'NEXOS INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (53,'NIELLA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (54,'ORTIZ INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (55,'P.O.E.A.',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (56,'PLATINIUM INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (57,'RAICES INMOBILIARIA (MACIEL, ELDORADO)',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (58,'RAICES INMOBILIARIA (MARCO W.)',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (59,'RAUL CARRIZO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (60,'RIMA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (61,'ROBLES PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (62,'RYS PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (63,'SAMUDIO HALLEY AIDA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (64,'SEDKO PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (65,'SOLARI INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (66,'SONIA PEREYRA INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (67,'SOSA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (68,'TEIJEIRO PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (69,'ULISES VALLARO INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (70,'V PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (71,'VANINA PAULUK INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (72,'VIBA PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (73,'ZAPANI PROPIEDADES',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (74,'ZUNY FERNANDEZ INMOBILIARIA',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "socios_inmobiliarios" VALUES (75,'SINGULAR',NULL,NULL,'ACTIVO',1,'2026-07-19 17:12:40');
+INSERT INTO "transacciones_comisiones" VALUES (1,1,1,65000.0,5.0,3250.0,325.0,'COMPLETADO','2026-07-19 17:33:08');
+INSERT INTO "transacciones_comisiones" VALUES (2,1,1,150000.0,4.0,6000.0,600.0,'COMPLETADO','2026-07-19 18:01:24');
+INSERT INTO "usuarios_empleados" VALUES (1,1,'Juan Pérez','juan@posadascentro.com','hash_pass_123','ADMIN',1);
+INSERT INTO "usuarios_empleados" VALUES (2,1,'María Gómez','maria@posadascentro.com','hash_pass_456','AGENTE',1);
+INSERT INTO "usuarios_empleados" VALUES (3,2,'Carlos Rodríguez','carlos@garupaprop.com','hash_pass_789','ADMIN',1);
+INSERT INTO "usuarios_empleados" VALUES (4,3,'Ana Martínez','ana@oberabr.com','hash_pass_321','AGENTE',1);
+CREATE TRIGGER calcular_comisiones_automatico
+AFTER INSERT ON transacciones_comisiones
+BEGIN
+    UPDATE transacciones_comisiones
+    SET 
+        monto_comision_total = NEW.monto_operacion * (NEW.porcentaje_comision_corredor / 100.0),
+        fee_plataforma_cim = (NEW.monto_operacion * (NEW.porcentaje_comision_corredor / 100.0)) * 0.10
+    WHERE id_transaccion = NEW.id_transaccion;
+END;
+CREATE TRIGGER requerir_consentimiento_ley25326
+BEFORE INSERT ON usuarios_empleados
+BEGIN
+    SELECT
+        CASE
+            WHEN NEW.acepto_terminos != 1
+            THEN RAISE(ABORT, 'Error Legal: No se puede registrar al usuario sin el consentimiento explícito de términos y condiciones (Ley N.º 25.326).')
+        END;
+END;
+COMMIT;
